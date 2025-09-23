@@ -1,7 +1,15 @@
 package main
 
-import "fmt"
+import (
+	"net/http"
+)
 
 func main() {
-	fmt.Println("hello, github")
+	mux := http.NewServeMux()
+	server := http.Server{
+		Handler: mux,
+		Addr:    ":8080",
+	}
+
+	server.ListenAndServe().Error()
 }
