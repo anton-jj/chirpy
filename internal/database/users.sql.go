@@ -25,3 +25,12 @@ func (q *Queries) CreateUser(ctx context.Context, email string) (User, error) {
 	)
 	return i, err
 }
+
+const resetDatabase = `-- name: ResetDatabase :exec
+DELETE from users
+`
+
+func (q *Queries) ResetDatabase(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, resetDatabase)
+	return err
+}

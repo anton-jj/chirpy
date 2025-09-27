@@ -11,7 +11,10 @@ import (
 	"sync/atomic"
 
 	"github.com/anton-jj/chripy/internal/database"
+	"github.com/google/uuid"
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
+	"time"
 )
 
 type responeError struct {
@@ -43,12 +46,22 @@ func (aCfg *apiConfig) handleMetrics(w http.ResponseWriter, r *http.Request) {
 
 func (aCfg *apiConfig) handleReset(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=UTF-8")
+	err := aCfg.db.ResetDatabase(r.Context())
+	if err != nil {
+		respondWithError(w, 500, "failed to reset database")
+		return
+
+	}
 	w.WriteHeader(http.StatusOK)
 	aCfg.fileServerHits.Store(0)
 	w.Write([]byte("hits reset to 0"))
 }
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		os.Exit(1)
+	}
 	dbURL := os.Getenv("DB_URL")
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
@@ -106,7 +119,19 @@ func (aCfg *apiConfig) handleUsers(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 500, "failed to create a user")
 		return
 	}
-	respondWithJson(w, 201, user)
+	type userStruct struct {
+		ID        uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Email     string    `json:"email"`
+	}
+	resp := userStruct{
+		ID:        user.ID,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.CreatedAt,
+		Email:     user.Email,
+	}
+	respondWithJson(w, 201, resp)
 
 }
 func handleHealtz(w http.ResponseWriter, r *http.Request) {
