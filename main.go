@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -11,10 +10,8 @@ import (
 	"sync/atomic"
 
 	"github.com/anton-jj/chripy/internal/database"
-	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
-	"time"
 )
 
 type responeError struct {
@@ -28,33 +25,6 @@ type apiConfig struct {
 
 type cleanedData struct {
 	Cleaned_body string `json:"cleaned_body"`
-}
-
-func (af *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		af.fileServerHits.Add(1)
-		next.ServeHTTP(w, r)
-	})
-}
-
-func (aCfg *apiConfig) handleMetrics(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=UTF-8")
-	w.WriteHeader(http.StatusOK)
-	bodyString := fmt.Sprintf("<html><body><h1>Welcome, Chirpy Admin</h1><p>Chirpy has been visited %d times!</p></body></html>", aCfg.fileServerHits.Load())
-	w.Write([]byte(bodyString))
-}
-
-func (aCfg *apiConfig) handleReset(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; charset=UTF-8")
-	err := aCfg.db.ResetDatabase(r.Context())
-	if err != nil {
-		respondWithError(w, 500, "failed to reset database")
-		return
-
-	}
-	w.WriteHeader(http.StatusOK)
-	aCfg.fileServerHits.Store(0)
-	w.Write([]byte("hits reset to 0"))
 }
 
 func main() {
@@ -83,8 +53,10 @@ func main() {
 	mux.HandleFunc("GET /api/healthz", handleHealtz)
 	mux.HandleFunc("GET /admin/metrics", apiConfig.handleMetrics)
 	mux.HandleFunc("POST /admin/reset", apiConfig.handleReset)
-	mux.HandleFunc("POST /api/validate_chirp", handleValidate)
 	mux.HandleFunc("POST /api/users", apiConfig.handleUsers)
+	mux.HandleFunc("POST /api/chirps", apiConfig.handleChirpCreate)
+	mux.HandleFunc("GET /api/chirps", apiConfig.handleChirpsGetAll)
+	mux.HandleFunc("GET /api/chirps/{chirpID}", apiConfig.handleGetChrip)
 
 	server := &http.Server{
 		Addr:    port,
@@ -94,76 +66,14 @@ func main() {
 	log.Printf("Serving files from %s to port: %s", filePathRoot, server.Addr)
 	server.ListenAndServe().Error()
 }
-func (aCfg *apiConfig) handleUsers(w http.ResponseWriter, r *http.Request) {
 
-	defer r.Body.Close()
-	type parameters struct {
-		Email string `json:"email"`
-	}
-
-	var params parameters
-
-	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
-		respondWithError(w, 400, "ivanlid json format")
-		return
-	}
-
-	if params.Email == "" {
-		respondWithError(w, 400, "email cant be empty")
-	}
-	fmt.Println(params.Email)
-	user, err := aCfg.db.CreateUser(r.Context(), params.Email)
-	if err != nil {
-		log.Println("creating user", user)
-		log.Println(err)
-		respondWithError(w, 500, "failed to create a user")
-		return
-	}
-	type userStruct struct {
-		ID        uuid.UUID `json:"id"`
-		CreatedAt time.Time `json:"created_at"`
-		UpdatedAt time.Time `json:"updated_at"`
-		Email     string    `json:"email"`
-	}
-	resp := userStruct{
-		ID:        user.ID,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.CreatedAt,
-		Email:     user.Email,
-	}
-	respondWithJson(w, 201, resp)
-
-}
 func handleHealtz(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=UTF-8")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("OK"))
 }
 
-func handleValidate(w http.ResponseWriter, r *http.Request) {
-
-	defer r.Body.Close()
-	type parameters struct {
-		Body string `json:"body"`
-	}
-
-	var params parameters
-	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
-		respondWithError(w, 500, "invalid json body")
-		return
-	}
-
-	if len(params.Body) > 140 {
-		respondWithError(w, 400, "chirp to long")
-		return
-	}
-
-	var cleanedBody string = removeProfane(params.Body)
-
-	respondWithJson(w, 200, cleanedData{Cleaned_body: cleanedBody})
-}
-
-func removeProfane(data string) string {
+func validateBody(data string) string {
 	badWords := map[string]int{
 		"kerfuffle": 0,
 		"sharbert":  0,
