@@ -1,6 +1,13 @@
 package auth
 
-import "github.com/alexedwards/argon2id"
+import (
+"github.com/alexedwards/argon2id"
+"github.com/golang-jwt/golang-jwt"
+)
+
+fucn MakeJWT(userID, uuid.UUID, tokensecret string, expieresIn time.Duration) (string, error) {
+	
+}
 
 func HashPassword(password string) (string, error) {
 

@@ -11,13 +11,57 @@ import (
 	"github.com/google/uuid"
 )
 
-func (aCfg *apiConfig) handleUsers(w http.ResponseWriter, r *http.Request) {
-
-	defer r.Body.Close()
 	type parameters struct {
 		Password string `json:"password"`
 		Email string `json:"email"`
 	}
+
+	type userStruct struct {
+		ID        uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Email     string    `json:"email"`
+	}
+
+func (aCfg *apiConfig) handleLogin(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+
+ 	var params parameters
+
+	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
+		respondWithError(w, 400, "invalid json format")	
+		return
+	}
+	user, err := aCfg.db.GetUserByEmail(r.Context(), params.Email)
+	if err != nil {
+		respondWithError(w, 400, "cant find user")
+		return
+	}
+
+	if params.Email == "" {
+		respondWithError(w, 400, "email cant be empty")
+		return
+	}
+
+	checked, err := auth.CheckPasswordHash(params.Password, user.HashedPassword) 
+	if err != nil || !checked{
+		respondWithError(w, 401, "Incorrect email or password")
+		return
+	}
+
+	resp := userStruct {
+		ID: user.ID,	
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+		Email: user.Email,
+	}
+
+	respondWithJson(w, 200, resp)
+	
+}
+func (aCfg *apiConfig) handleUsers(w http.ResponseWriter, r *http.Request) {
+
+	defer r.Body.Close()
 
 	var params parameters
 
@@ -45,12 +89,6 @@ func (aCfg *apiConfig) handleUsers(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 500, "failed to create a user")
 		return
 	}
-	type userStruct struct {
-		ID        uuid.UUID `json:"id"`
-		CreatedAt time.Time `json:"created_at"`
-		UpdatedAt time.Time `json:"updated_at"`
-		Email     string    `json:"email"`
-	}
 	resp := userStruct{
 		ID:        user.ID,
 		CreatedAt: user.CreatedAt,
@@ -60,3 +98,6 @@ func (aCfg *apiConfig) handleUsers(w http.ResponseWriter, r *http.Request) {
 	respondWithJson(w, 201, resp)
 
 }
+
+
+

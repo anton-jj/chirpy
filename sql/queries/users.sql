@@ -5,3 +5,6 @@ VALUES (gen_random_uuid(), NOW(),  NOW(), $1, $2) RETURNING *;
 
 -- name: ResetDatabase :exec
 DELETE from users;
+
+-- name: GetUserByEmail :one
+	SELECT * FROM users WHERE email = $1;
