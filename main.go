@@ -21,6 +21,7 @@ type responeError struct {
 type apiConfig struct {
 	fileServerHits atomic.Int32
 	db             *database.Queries
+	secret         string
 }
 
 type cleanedData struct {
@@ -33,6 +34,7 @@ func main() {
 		os.Exit(1)
 	}
 	dbURL := os.Getenv("DB_URL")
+	secret := os.Getenv("SECRET")
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		os.Exit(1)
@@ -44,7 +46,9 @@ func main() {
 	apiConfig := apiConfig{
 		fileServerHits: atomic.Int32{},
 		db:             dbQueries,
+		secret:         secret,
 	}
+	log.Print(apiConfig.secret)
 
 	mux := http.NewServeMux()
 	fsHandler := apiConfig.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir(filePathRoot))))

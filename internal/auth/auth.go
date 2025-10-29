@@ -1,7 +1,11 @@
 package auth
 
 import (
+	"fmt"
+	"strings"
 	"time"
+
+	"net/http"
 
 	"github.com/alexedwards/argon2id"
 	"github.com/golang-jwt/jwt/v5"
@@ -28,17 +32,23 @@ func MakeJWT(userID uuid.UUID, tokenSecret string, expieresIn time.Duration) (st
 func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &jwt.RegisteredClaims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, jwt.ErrTokenSignatureInvalid
+			return nil, fmt.Errorf("unexpected signing method")
 		}
-		return tokenString, nil
+		return []byte(tokenSecret), nil
 	})
 	if err != nil {
 		return uuid.Nil, err
 	}
-	if claims, ok := token.Claims.(*jwt.RegisteredClaims); ok && token.Valid {
-		return uuid.Parse(claims.Issuer), nil
+	claims, ok := token.Claims.(*jwt.RegisteredClaims)
+	if !ok || !token.Valid {
+		return uuid.Nil, jwt.ErrTokenInvalidClaims
 	}
-	return uuid.MustParse(token.Claims.GetIssuer())
+	sub := claims.Subject
+	userID, err := uuid.Parse(sub)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return userID, nil
 }
 
 func HashPassword(password string) (string, error) {
@@ -57,4 +67,13 @@ func CheckPasswordHash(password, hash string) (bool, error) {
 	}
 
 	return match, nil
+}
+
+func GetBearerToken(headers http.Header) (string, error) {
+	tokenString := headers.Get("Authorization")
+	if tokenString == "" {
+		return "", fmt.Errorf("no bearer token ")
+	}
+	token := strings.Fields(tokenString)
+	return token[1], nil
 }
