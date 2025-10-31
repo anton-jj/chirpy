@@ -3,10 +3,13 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
+	"github.com/anton-jj/chripy/internal/auth"
 	"github.com/anton-jj/chripy/internal/database"
+
 	"github.com/google/uuid"
 )
 
@@ -36,7 +39,7 @@ func (aCfg *apiConfig) handleGetChrip(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: chirp.CreatedAt,
 		UpdatedAt: chirp.UpdatedAt,
 		Body:      chirp.Body,
-		User_id:   chirp.UserID.UUID,
+		User_id:   chirp.UserID,
 	}
 
 	respondWithJson(w, 200, resp)
@@ -54,7 +57,7 @@ func (aCfg *apiConfig) handleChirpsGetAll(w http.ResponseWriter, r *http.Request
 			CreatedAt: chirp.CreatedAt,
 			UpdatedAt: chirp.UpdatedAt,
 			Body:      chirp.Body,
-			User_id:   chirp.UserID.UUID,
+			User_id:   chirp.UserID,
 		})
 	}
 	respondWithJson(w, 200, jsonChirps)
@@ -63,8 +66,7 @@ func (aCfg *apiConfig) handleChirpsGetAll(w http.ResponseWriter, r *http.Request
 func (aCfg *apiConfig) handleChirpCreate(w http.ResponseWriter, r *http.Request) {
 
 	type parameters struct {
-		Body    string    `json:"body"`
-		User_id uuid.UUID `json:""`
+		Body string `json:"body"`
 	}
 
 	var params parameters
@@ -80,17 +82,28 @@ func (aCfg *apiConfig) handleChirpCreate(w http.ResponseWriter, r *http.Request)
 	}
 
 	var cleanedBody string = validateBody(params.Body)
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		log.Printf("GetBearerToken error: %v", err)
+		respondWithError(w, 401, "Falied to get token")
+		return
+	}
+	validToken, err := auth.ValidateJWT(token, aCfg.secret)
+	if err != nil {
+		log.Printf("ValidateJWT error: %v", err) // Add this
+		respondWithError(w, 401, "Unauthorized")
+		return
+	}
 
+	log.Printf("Token validated, user ID: %s", validToken) // Add this
 	dbParams := database.CreateChirpParams{
-		Body: cleanedBody,
-		UserID: uuid.NullUUID{
-			Valid: true,
-			UUID:  params.User_id,
-		},
+		Body:   cleanedBody,
+		UserID: validToken,
 	}
 	chirp, err := aCfg.db.CreateChirp(r.Context(), dbParams)
 	if err != nil {
 		respondWithError(w, 500, "database failed to create chirp")
+		return
 	}
 
 	resp := Chirp{
@@ -98,7 +111,7 @@ func (aCfg *apiConfig) handleChirpCreate(w http.ResponseWriter, r *http.Request)
 		CreatedAt: chirp.CreatedAt,
 		UpdatedAt: chirp.UpdatedAt,
 		Body:      chirp.Body,
-		User_id:   chirp.UserID.UUID,
+		User_id:   chirp.UserID,
 	}
 	respondWithJson(w, 201, resp)
 

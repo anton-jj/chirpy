@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/anton-jj/chripy/internal/auth"
 	"github.com/anton-jj/chripy/internal/database"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -48,7 +49,6 @@ func main() {
 		db:             dbQueries,
 		secret:         secret,
 	}
-	log.Print(apiConfig.secret)
 
 	mux := http.NewServeMux()
 	fsHandler := apiConfig.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir(filePathRoot))))
@@ -61,6 +61,7 @@ func main() {
 	mux.HandleFunc("POST /api/login", apiConfig.handleLogin)
 	mux.HandleFunc("POST /api/chirps", apiConfig.handleChirpCreate)
 	mux.HandleFunc("GET /api/chirps", apiConfig.handleChirpsGetAll)
+	mux.HandleFunc("POST /api/refresh", apiConfig.handleRefresh)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", apiConfig.handleGetChrip)
 
 	server := &http.Server{
@@ -76,6 +77,28 @@ func handleHealtz(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=UTF-8")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("OK"))
+}
+
+func (aCfg *apiConfig) handleRefresh(w http.ResponseWriter, r *http.Request) {
+	bearerToken, err := auth.GetBearerToken(w.Header())
+	if err != nil {
+		respondWithError(w, 401, "Something wrong with headers")
+	}
+
+	token, err := aCfg.db.GetRefreshToken(r.Context(), sql.NullString{Valid: true, String: bearerToken})
+	if err != nil {
+		respondWithError(w, 401, "could not find the refreshtoken")
+	}
+
+	type respStruct struct {
+		Token string `json:"token"`
+	}
+	resp := respStruct{
+		Token: token.Token.String,
+	}
+
+	respondWithJson(w, 200, resp)
+
 }
 
 func validateBody(data string) string {

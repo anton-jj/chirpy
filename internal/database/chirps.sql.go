@@ -18,7 +18,7 @@ VALUES (gen_random_uuid(), NOW(), NOW(), $1, $2) RETURNING id, created_at, updat
 
 type CreateChirpParams struct {
 	Body   string
-	UserID uuid.NullUUID
+	UserID uuid.UUID
 }
 
 func (q *Queries) CreateChirp(ctx context.Context, arg CreateChirpParams) (Chirp, error) {

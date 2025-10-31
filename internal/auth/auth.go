@@ -1,17 +1,29 @@
 package auth
 
 import (
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
 
 	"net/http"
 
+	"crypto/rand"
+
 	"github.com/alexedwards/argon2id"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
 
+func MakeRefreshToken() (string, error) {
+	buf := make([]byte, 32)
+	_, err := rand.Read(buf)
+	if err != nil {
+		return "", err
+	}
+	randString := hex.EncodeToString(buf)
+	return randString, nil
+}
 func MakeJWT(userID uuid.UUID, tokenSecret string, expieresIn time.Duration) (string, error) {
 	currentTime := time.Now().UTC()
 	claims := jwt.RegisteredClaims{
