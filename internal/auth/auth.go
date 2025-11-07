@@ -82,10 +82,14 @@ func CheckPasswordHash(password, hash string) (bool, error) {
 }
 
 func GetBearerToken(headers http.Header) (string, error) {
-	tokenString := headers.Get("Authorization")
-	if tokenString == "" {
+	auth := headers.Get("Authorization")
+	if auth == "" {
 		return "", fmt.Errorf("no bearer token ")
 	}
-	token := strings.Fields(tokenString)
-	return token[1], nil
+	parts := strings.Fields(auth)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || parts[1] == "" {
+		return "", fmt.Errorf("invalid header format")
+	}
+ 
+	return parts[1], nil
 }

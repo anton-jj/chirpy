@@ -7,6 +7,9 @@ package database
 
 import (
 	"context"
+	"database/sql"
+
+	"github.com/google/uuid"
 )
 
 const createUser = `-- name: CreateUser :one
@@ -49,11 +52,60 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 	return i, err
 }
 
+const getUserById = `-- name: GetUserById :one
+	SELECT id, created_at, updated_at, email, hashed_password FROM users WHERE id = $1
+`
+
+func (q *Queries) GetUserById(ctx context.Context, id uuid.UUID) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUserById, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Email,
+		&i.HashedPassword,
+	)
+	return i, err
+}
+
+const getUserFromRefreshToken = `-- name: GetUserFromRefreshToken :one
+	SELECT u.id, u.created_at, u.updated_at, u.email, u.hashed_password FROM users u JOIN refresh_tokens rt ON u.id = rt.user_id WHERE rt.token = $1
+`
+
+func (q *Queries) GetUserFromRefreshToken(ctx context.Context, token sql.NullString) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUserFromRefreshToken, token)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Email,
+		&i.HashedPassword,
+	)
+	return i, err
+}
+
 const resetDatabase = `-- name: ResetDatabase :exec
 DELETE from users
 `
 
 func (q *Queries) ResetDatabase(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, resetDatabase)
+	return err
+}
+
+const updateUser = `-- name: UpdateUser :exec
+	UPDATE users SET email = $1, hashed_password = $2 WHERE id = $3
+`
+
+type UpdateUserParams struct {
+	Email          string
+	HashedPassword string
+	ID             uuid.UUID
+}
+
+func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) error {
+	_, err := q.db.ExecContext(ctx, updateUser, arg.Email, arg.HashedPassword, arg.ID)
 	return err
 }

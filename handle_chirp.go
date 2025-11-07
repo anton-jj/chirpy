@@ -2,9 +2,9 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/anton-jj/chripy/internal/auth"
@@ -21,9 +21,49 @@ type Chirp struct {
 	User_id   uuid.UUID `json:"user_id"`
 }
 
-func (aCfg *apiConfig) handleGetChrip(w http.ResponseWriter, r *http.Request) {
+func (aCfg *apiConfig) handleDeleteChirp(w http.ResponseWriter, r *http.Request) {
+	tok, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, 401, "header missing or malformed")
+		return
+	}
+	if strings.Count(tok, ".") != 2 {
+		respondWithError(w, 401, "header malformed")
+		return
+	}
+
+	userId, err := auth.ValidateJWT(tok, aCfg.secret)
+	if err != nil {
+		respondWithError(w, 403, "Unauthorized")
+		return
+	}
+
 	id, err := uuid.Parse(r.PathValue("chirpID"))
-	fmt.Println(id)
+	if err != nil {
+		respondWithError(w, 500, "Failed to get pathvariable")
+		return
+	}
+
+	chirp, err := aCfg.db.GetChirpById(r.Context(), id)
+	if err != nil {
+		respondWithError(w, 403, "Unauthorized")
+		return
+	}
+
+	if chirp.UserID != userId {
+		respondWithError(w, 403, "Unauthorized")
+		return
+	}
+	err = aCfg.db.DeleteChirpById(r.Context(), id)
+	if err != nil {
+		respondWithError(w, 404, "Chirp is not found")
+		return
+	}
+	respondWithJson(w, 204, nil)
+
+}
+func (aCfg *apiConfig) handleGetChirp(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("chirpID"))
 	if err != nil {
 		respondWithError(w, 500, "error while parsing the pathvariable")
 		return
@@ -82,25 +122,32 @@ func (aCfg *apiConfig) handleChirpCreate(w http.ResponseWriter, r *http.Request)
 	}
 
 	var cleanedBody string = validateBody(params.Body)
+
 	token, err := auth.GetBearerToken(r.Header)
 	if err != nil {
-		log.Printf("GetBearerToken error: %v", err)
-		respondWithError(w, 401, "Falied to get token")
-		return
-	}
-	validToken, err := auth.ValidateJWT(token, aCfg.secret)
-	if err != nil {
-		log.Printf("ValidateJWT error: %v", err) // Add this
 		respondWithError(w, 401, "Unauthorized")
 		return
 	}
 
-	log.Printf("Token validated, user ID: %s", validToken) // Add this
+	if strings.Count(token, ".") != 2 {
+		respondWithError(w, 401, "Unauthorized")
+		return
+
+	}
+	validToken, err := auth.ValidateJWT(token, aCfg.secret)
+	log.Println(validToken)
+	if err != nil {
+		respondWithError(w, 401, "Unauthorized")
+		return
+	}
+
 	dbParams := database.CreateChirpParams{
 		Body:   cleanedBody,
 		UserID: validToken,
 	}
+	log.Println(dbParams)
 	chirp, err := aCfg.db.CreateChirp(r.Context(), dbParams)
+
 	if err != nil {
 		respondWithError(w, 500, "database failed to create chirp")
 		return

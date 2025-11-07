@@ -6,3 +6,5 @@ VALUES (gen_random_uuid(), NOW(), NOW(), $1, $2) RETURNING *;
 SELECT * FROM chirps ORDER BY created_at ASC;
 -- name: GetChirpById :one
 SELECT * FROM chirps WHERE ID = $1;
+-- name: DeleteChirpById :exec
+ DELETE FROM chirps WHERE ID = $1;

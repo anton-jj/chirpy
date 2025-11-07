@@ -14,7 +14,7 @@ import (
 )
 
 const createRefreshToken = `-- name: CreateRefreshToken :one
-INSERT INTO refresh_token (token, created_at, updated_at, user_id, expires_at, revoked_at)
+INSERT INTO refresh_tokens (token, created_at, updated_at, user_id, expires_at, revoked_at)
 VALUES ($1, NOW(), NOW(), $2, $3, $4) RETURNING token, created_at, updated_at, user_id, expires_at, revoked_at
 `
 
@@ -45,7 +45,7 @@ func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshToken
 }
 
 const getRefreshToken = `-- name: GetRefreshToken :one
-	SELECT token, created_at, updated_at, user_id, expires_at, revoked_at FROM refresh_token WHERE token = $1
+	SELECT token, created_at, updated_at, user_id, expires_at, revoked_at FROM refresh_tokens WHERE token = $1
 `
 
 func (q *Queries) GetRefreshToken(ctx context.Context, token sql.NullString) (RefreshToken, error) {
@@ -60,4 +60,19 @@ func (q *Queries) GetRefreshToken(ctx context.Context, token sql.NullString) (Re
 		&i.RevokedAt,
 	)
 	return i, err
+}
+
+const updateRevokedAt = `-- name: UpdateRevokedAt :exec
+	UPDATE refresh_tokens SET revoked_at = $1, updated_at = $2 WHERE token = $3
+`
+
+type UpdateRevokedAtParams struct {
+	RevokedAt sql.NullTime
+	UpdatedAt time.Time
+	Token     sql.NullString
+}
+
+func (q *Queries) UpdateRevokedAt(ctx context.Context, arg UpdateRevokedAtParams) error {
+	_, err := q.db.ExecContext(ctx, updateRevokedAt, arg.RevokedAt, arg.UpdatedAt, arg.Token)
+	return err
 }

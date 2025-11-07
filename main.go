@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/anton-jj/chripy/internal/auth"
 	"github.com/anton-jj/chripy/internal/database"
@@ -62,7 +63,10 @@ func main() {
 	mux.HandleFunc("POST /api/chirps", apiConfig.handleChirpCreate)
 	mux.HandleFunc("GET /api/chirps", apiConfig.handleChirpsGetAll)
 	mux.HandleFunc("POST /api/refresh", apiConfig.handleRefresh)
-	mux.HandleFunc("GET /api/chirps/{chirpID}", apiConfig.handleGetChrip)
+	mux.HandleFunc("POST /api/revoke", apiConfig.handleRevoke)
+	mux.HandleFunc("PUT /api/users", apiConfig.handleUpdateUser)
+	mux.HandleFunc("GET /api/chirps/{chirpID}", apiConfig.handleGetChirp)
+	mux.HandleFunc("DELETE /api/chirps/{chirpID}", apiConfig.handleDeleteChirp)
 
 	server := &http.Server{
 		Addr:    port,
@@ -79,25 +83,74 @@ func handleHealtz(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("OK"))
 }
 
-func (aCfg *apiConfig) handleRefresh(w http.ResponseWriter, r *http.Request) {
-	bearerToken, err := auth.GetBearerToken(w.Header())
+func (aCfg *apiConfig) handleRevoke(w http.ResponseWriter, r *http.Request) {
+
+	auth, err := auth.GetBearerToken(r.Header)
 	if err != nil {
 		respondWithError(w, 401, "Something wrong with headers")
+		return
 	}
 
-	token, err := aCfg.db.GetRefreshToken(r.Context(), sql.NullString{Valid: true, String: bearerToken})
+	token, err := aCfg.db.GetRefreshToken(r.Context(), sql.NullString{Valid: true, String: auth})
 	if err != nil {
-		respondWithError(w, 401, "could not find the refreshtoken")
+		respondWithError(w, 401, "Could not find token in database")
+		return
+	}
+	params := database.UpdateRevokedAtParams {
+		RevokedAt: sql.NullTime{
+		Valid: true, 
+		Time: time.Now().UTC() },
+		UpdatedAt: time.Now(),
+		Token: token.Token,
+	}
+	err = aCfg.db.UpdateRevokedAt(r.Context(), params)
+	if err != nil {
+		respondWithError(w, 401, "Failed to update token in database")
+		return
 	}
 
-	type respStruct struct {
-		Token string `json:"token"`
-	}
-	resp := respStruct{
-		Token: token.Token.String,
+	respondWithJson(w, 204, nil)
+
+}
+func (aCfg *apiConfig) handleRefresh(w http.ResponseWriter, r *http.Request) {
+
+	refreshToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, 401, "Unauthorized")
+		return
 	}
 
-	respondWithJson(w, 200, resp)
+	row, err := aCfg.db.GetRefreshToken(r.Context(), sql.NullString{Valid: true, String: refreshToken})
+	if err != nil {
+		respondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	if row.RevokedAt.Valid {
+		respondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	if row.ExpiresAt.Before(time.Now().UTC()) {
+		respondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	user, err := aCfg.db.GetUserFromRefreshToken(r.Context(), sql.NullString{Valid: true, String:row.Token.String})
+	if err != nil {
+		respondWithError(w, 401, "Unauthorized")
+		return
+	
+	}
+
+	newJWT, err := auth.MakeJWT(user.ID, aCfg.secret, time.Hour)
+	if err != nil {
+		respondWithError(w, 500, "failed to create new jwt")
+		return
+	}
+
+
+	respondWithJson(w, 200, struct{ Token string `json:"token"`} {Token: newJWT})
 
 }
 
@@ -109,7 +162,6 @@ func validateBody(data string) string {
 	}
 	var cleanedData []string
 	for _, s := range strings.Split(data, " ") {
-		log.Println(s)
 		if _, ok := badWords[strings.ToLower(s)]; ok {
 			cleanedData = append(cleanedData, "****")
 		} else {
